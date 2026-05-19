@@ -1,0 +1,10 @@
+/* Indian Market AI - global styles */
+:root {
+  --primary: #1e3a5f;
+  --accent: #00c853;
+  --danger: #ff5252;
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+}
