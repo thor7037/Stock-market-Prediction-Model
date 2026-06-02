@@ -2,4 +2,9 @@
 
 
 def get_options_chain(symbol: str):
-    raise NotImplementedError
+    return {
+        "symbol": symbol,
+        "calls": [],
+        "puts": [],
+        "source": "not_configured",
+    }

@@ -54,6 +54,7 @@ def save_market_data(
     market_data,
     prediction,
 ):
+    nifty_data = market_data.get("giftNifty") or market_data.get("nifty") or {}
 
     conn = sqlite3.connect(
         "database/market_data.db"
@@ -109,7 +110,7 @@ def save_market_data(
 
             market_data["vix"]["percentage"],
 
-            market_data["giftNifty"]["current"],
+            nifty_data.get("current", 0),
 
             prediction["expectedMove"],
 

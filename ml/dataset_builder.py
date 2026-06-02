@@ -1,108 +1,37 @@
-import pandas as pd
-import yfinance as yf
+"""Build 10-year training datasets for index direction models."""
 
-from ta.momentum import RSIIndicator
-from ta.trend import MACD, EMAIndicator
-from ta.volatility import AverageTrueRange
+from __future__ import annotations
 
-# =====================================
-# DOWNLOAD
-# =====================================
+from pathlib import Path
 
-def download(symbol):
+from ml.feature_utils import build_training_frame
 
-    df = yf.download(
-        symbol,
-        start="2015-01-01",
-        progress=False
-    )
+OUTPUT_DIR = Path("historical_data")
+SYMBOLS = {
+    "^NSEI": "nifty",
+    "^NSEBANK": "banknifty",
+    "^BSESN": "sensex",
+}
 
-    df = df[["Open", "High", "Low", "Close", "Volume"]]
 
-    # rename properly
-    df.columns = ["Open", "High", "Low", "Close", "Volume"]
+def build_dataset(symbol: str, filename: str) -> None:
+    print(f"\nBuilding dataset for {symbol}...")
 
-    return df
+    df = build_training_frame(symbol, period="10y")
+    if df.empty:
+        raise ValueError(f"No usable OHLCV data for {symbol}")
 
-# =====================================
-# BUILD DATASET
-# =====================================
+    target_dist = df["Target"].value_counts(normalize=True).sort_index()
+    print(f"\nTarget distribution for {symbol}:")
+    print(target_dist.to_string())
 
-def build_dataset():
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_path = OUTPUT_DIR / f"{filename}.csv"
+    df.to_csv(output_path, index=False)
 
-    print("Downloading data...")
-
-    nifty = download("^NSEI")
-    vix = download("^INDIAVIX")
-
-    df = pd.concat([nifty, vix.add_prefix("VIX_")], axis=1)
-
-    df = df.ffill().dropna()
-
-    # =====================================
-    # RETURNS
-    # =====================================
-
-    df["RETURN"] = df["Close"].pct_change()
-
-    # =====================================
-    # TARGET (FIXED)
-    # =====================================
-
-    df["Target"] = 1
-
-    df.loc[df["RETURN"] > 0.005, "Target"] = 2
-    df.loc[df["RETURN"] < -0.005, "Target"] = 0
-
-    # =====================================
-    # TECHNICALS
-    # =====================================
-
-    close = df["Close"].squeeze()
-
-    df["RSI"] = RSIIndicator(close=close).rsi()
-    df["EMA20"] = EMAIndicator(close=close, window=20).ema_indicator()
-    df["MACD"] = MACD(close=close).macd()
-
-    # =====================================
-    # VOLATILITY
-    # =====================================
-
-    atr = AverageTrueRange(
-        high=df["High"],
-        low=df["Low"],
-        close=df["Close"]
-    )
-
-    df["ATR"] = atr.average_true_range()
-    df["RANGE"] = df["High"] - df["Low"]
-    df["VIX_CHANGE"] = df["VIX_Close"].pct_change()
-
-    # =====================================
-    # MOMENTUM
-    # =====================================
-
-    df["MOMENTUM_3"] = df["Close"].pct_change(3)
-    df["MOMENTUM_5"] = df["Close"].pct_change(5)
-
-    # =====================================
-    # CLEAN
-    # =====================================
-
-    df = df.dropna()
-
-    # REMOVE DATE COLUMN ISSUE
-    df = df.reset_index(drop=True)
-
-    # =====================================
-    # SAVE
-    # =====================================
-
-    df.to_csv("historical_data/dataset.csv", index=False)
-
-    print("Dataset ready!")
-    print(df.tail())
+    print(f"\nSaved {len(df):,} rows to {output_path}")
 
 
 if __name__ == "__main__":
-    build_dataset()
+    for symbol, filename in SYMBOLS.items():
+        build_dataset(symbol, filename)
