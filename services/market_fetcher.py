@@ -4,18 +4,17 @@ from __future__ import annotations
 
 import pandas as pd
 
-from services.yf_helpers import DEFAULT_PERIODS_SHORT, download_daily, flatten_columns
-
-from services.global_markets import INDIA_INDICES, INVESTOR_MARKETS
-
-
-def _scalar(value) -> float:
-    if hasattr(value, "squeeze"):
-        value = value.squeeze()
-    if isinstance(value, pd.Series):
-        value = value.iloc[-1] if len(value) else 0
-    return float(value)
-
+from services.global_markets import (
+    FINNIFTY_PROXY_RATIO,
+    INDIA_INDICES,
+    INVESTOR_MARKETS,
+)
+from services.yf_helpers import (
+    DEFAULT_PERIODS_SHORT,
+    download_batch_daily,
+    download_daily,
+    flatten_columns,
+)
 
 _EMPTY = {
     "open": 0.0,
@@ -27,6 +26,14 @@ _EMPTY = {
     "range_pct": 0.0,
     "close_in_range": 0.5,
 }
+
+
+def _scalar(value) -> float:
+    if hasattr(value, "squeeze"):
+        value = value.squeeze()
+    if isinstance(value, pd.Series):
+        value = value.iloc[-1] if len(value) else 0
+    return float(value)
 
 
 def _row_to_snapshot(df: pd.DataFrame) -> dict | None:
@@ -62,13 +69,27 @@ def _row_to_snapshot(df: pd.DataFrame) -> dict | None:
 
 
 def safe_fetch_ohlc(symbol: str, period: str | None = None) -> dict | None:
-    """
-    Fetch latest daily OHLC snapshot. Uses period fallbacks + Ticker.history
-    (see services.yf_helpers.download_daily).
-    """
     periods = (period,) if period else DEFAULT_PERIODS_SHORT
     df = download_daily(symbol, periods=periods)
     return _row_to_snapshot(df)
+
+
+def proxy_from_nifty(nifty_snap: dict, ratio: float = FINNIFTY_PROXY_RATIO) -> dict:
+    """Estimate Fin Nifty OHLC from NIFTY (same day % / range, scaled spot)."""
+    if not nifty_snap or float(nifty_snap.get("current", 0) or 0) <= 0:
+        return dict(_EMPTY)
+
+    return {
+        "open": round(float(nifty_snap["open"]) * ratio, 2),
+        "high": round(float(nifty_snap["high"]) * ratio, 2),
+        "low": round(float(nifty_snap["low"]) * ratio, 2),
+        "current": round(float(nifty_snap["current"]) * ratio, 2),
+        "points": round(float(nifty_snap.get("points", 0)) * ratio, 2),
+        "percentage": float(nifty_snap.get("percentage", 0)),
+        "range_pct": float(nifty_snap.get("range_pct", 0)),
+        "close_in_range": float(nifty_snap.get("close_in_range", 0.5)),
+        "data_source": "proxied_from_nifty",
+    }
 
 
 def snapshot_from_manual(
@@ -77,7 +98,6 @@ def snapshot_from_manual(
     close: float,
     percentage: float | None = None,
 ) -> dict:
-    """Build a market snapshot from user-supplied H/L/C or % change."""
     if close <= 0:
         return dict(_EMPTY)
 
@@ -104,6 +124,8 @@ def snapshot_from_manual(
 
 def _first_successful_symbol(symbols: tuple[str, ...]) -> dict | None:
     for sym in symbols:
+        if not sym:
+            continue
         data = safe_fetch_ohlc(sym)
         if data and data.get("current", 0):
             return data
@@ -111,39 +133,65 @@ def _first_successful_symbol(symbols: tuple[str, ...]) -> dict | None:
 
 
 def fetch_investor_markets() -> dict[str, dict]:
-    result = {}
+    """Batch Yahoo fetch for all investor-market symbols."""
+    sym_to_market: dict[str, str] = {}
+    all_syms: list[str] = []
+
     for market in INVESTOR_MARKETS:
+        for sym in (market.symbol,) + market.symbol_alternates:
+            if sym and sym not in sym_to_market:
+                sym_to_market[sym] = market.key
+                all_syms.append(sym)
+
+    batch = download_batch_daily(tuple(all_syms), period="5d")
+    result: dict[str, dict] = {m.key: dict(_EMPTY) for m in INVESTOR_MARKETS}
+
+    for sym, df in batch.items():
+        snap = _row_to_snapshot(df)
+        if not snap:
+            continue
+        key = sym_to_market.get(sym)
+        if key and snap.get("current", 0):
+            result[key] = snap
+
+    for market in INVESTOR_MARKETS:
+        if result[market.key].get("current", 0):
+            continue
         syms = (market.symbol,) + market.symbol_alternates
         data = _first_successful_symbol(syms)
-        result[market.key] = data if data else dict(_EMPTY)
+        if data:
+            result[market.key] = data
+
     return result
 
 
 def fetch_india_indices() -> dict[str, dict]:
-    result = {}
+    result: dict[str, dict] = {}
+
     for key, meta in INDIA_INDICES.items():
+        if not meta.get("fetch_live", True):
+            continue
         syms = (meta["symbol"],) + tuple(meta.get("symbol_alternates", ()))
         data = _first_successful_symbol(syms)
         result[key] = data if data else dict(_EMPTY)
+
+    nifty = result.get("nifty", dict(_EMPTY))
+    for key, meta in INDIA_INDICES.items():
+        if meta.get("proxy_from") == "nifty":
+            result[key] = proxy_from_nifty(nifty)
+
     return result
 
 
 def fetch_global_market_data() -> dict:
-    """Backward-compatible bundle for existing callers."""
     investor = fetch_investor_markets()
     india = fetch_india_indices()
 
     return {
         **investor,
         **india,
-        "nasdaq": safe_fetch_ohlc("^IXIC") or dict(_EMPTY),
-        "dow": safe_fetch_ohlc("^DJI") or dict(_EMPTY),
         "sp500": investor.get("united_states", dict(_EMPTY)),
         "nikkei": investor.get("japan", dict(_EMPTY)),
-        "hangseng": safe_fetch_ohlc("^HSI") or dict(_EMPTY),
-        "crudeOil": safe_fetch_ohlc("BZ=F") or dict(_EMPTY),
-        "dxy": safe_fetch_ohlc("DX-Y.NYB") or dict(_EMPTY),
-        "vix": safe_fetch_ohlc("^INDIAVIX") or dict(_EMPTY),
         "nifty": india.get("nifty", dict(_EMPTY)),
         "banknifty": india.get("banknifty", dict(_EMPTY)),
         "finnifty": india.get("finnifty", dict(_EMPTY)),

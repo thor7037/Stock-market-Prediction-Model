@@ -101,26 +101,37 @@ INVESTOR_MARKETS: tuple[GlobalMarket, ...] = (
 
 MARKET_BY_KEY = {m.key: m for m in INVESTOR_MARKETS}
 
+# Fin Nifty spot is proxied from NIFTY (Yahoo has no reliable FIN NIFTY ticker).
+FINNIFTY_PROXY_RATIO = 0.92
+
 INDIA_INDICES = {
     "nifty": {
         "name": "NIFTY 50",
         "symbol": "^NSEI",
         "symbol_alternates": (),
+        "fetch_live": True,
+        "proxy_from": None,
     },
     "banknifty": {
         "name": "BANK NIFTY",
         "symbol": "^NSEBANK",
         "symbol_alternates": (),
+        "fetch_live": True,
+        "proxy_from": None,
     },
     "finnifty": {
         "name": "FIN NIFTY",
-        "symbol": "^NSEFIN",
-        "symbol_alternates": ("FINNIFTY.NS",),
+        "symbol": "^CNXFIN",
+        "symbol_alternates": (),
+        "fetch_live": False,
+        "proxy_from": "nifty",
     },
     "sensex": {
         "name": "SENSEX",
         "symbol": "^BSESN",
         "symbol_alternates": (),
+        "fetch_live": True,
+        "proxy_from": None,
     },
 }
 

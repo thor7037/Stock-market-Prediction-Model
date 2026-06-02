@@ -4,7 +4,7 @@ Weighted composite from global market snapshots → India direction hint.
 
 from __future__ import annotations
 
-from services.global_markets import INVESTOR_MARKETS, MARKET_BY_KEY
+from services.global_markets import INVESTOR_MARKETS
 
 
 def _direction_score(snapshot: dict) -> float:
@@ -24,6 +24,13 @@ def _direction_score(snapshot: dict) -> float:
     return max(-1.0, min(1.0, score))
 
 
+def _has_usable_snapshot(snapshot: dict) -> bool:
+    current = float(snapshot.get("current", 0) or 0)
+    pct = float(snapshot.get("percentage", 0) or 0)
+    range_pct = float(snapshot.get("range_pct", 0) or 0)
+    return current > 0 or pct != 0 or range_pct != 0
+
+
 def compute_pre_india_signal(snapshots: dict[str, dict]) -> dict:
     """
     snapshots: {market_key: {percentage, range_pct, close_in_range, ...}}
@@ -35,6 +42,8 @@ def compute_pre_india_signal(snapshots: dict[str, dict]) -> dict:
     for market in INVESTOR_MARKETS:
         snap = snapshots.get(market.key)
         if not snap:
+            continue
+        if not _has_usable_snapshot(snap):
             continue
 
         w = market.impact_pct
@@ -67,13 +76,14 @@ def compute_pre_india_signal(snapshots: dict[str, dict]) -> dict:
     else:
         sentiment = "Sideways"
 
-    expected_move_pct = round(abs(composite) * 1.2, 2)
+    expected_move_pct = round(composite * 1.2, 2)
+    expected_move_magnitude = abs(expected_move_pct)
 
     if composite > 0.35:
         options_hint = "Favor CE / call spreads (bullish bias)"
     elif composite < -0.35:
         options_hint = "Favor PE / put spreads (bearish bias)"
-    elif expected_move_pct < 0.35:
+    elif expected_move_magnitude < 0.35:
         options_hint = "Low edge — avoid aggressive directional options"
     else:
         options_hint = "Mixed — consider iron condor / reduced size"

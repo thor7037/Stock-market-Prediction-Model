@@ -1,46 +1,34 @@
-from nsepython import *
+"""NSE option-chain helpers."""
 
-import json
+from __future__ import annotations
 
-# =====================================
-# DEBUG NSE RESPONSE
-# =====================================
 
-try:
+def fetch_nse_option_chain(symbol: str = "NIFTY") -> dict:
+    try:
+        from nsepython import nse_optionchain_scrapper
+    except ImportError:
+        return {
+            "symbol": symbol,
+            "records": {},
+            "source": "nsepython_missing",
+        }
 
-    data = nse_optionchain_scrapper(
-        "NIFTY"
-    )
+    try:
+        data = nse_optionchain_scrapper(symbol)
+    except Exception as exc:
+        return {
+            "symbol": symbol,
+            "records": {},
+            "error": str(exc),
+            "source": "nsepython",
+        }
 
-    print(
-        "\nFULL RESPONSE:\n"
-    )
+    return {
+        "symbol": symbol,
+        "records": data,
+        "source": "nsepython",
+    }
 
-    print(
-        json.dumps(
-            data,
-            indent=2,
-        )[:5000]
-    )
 
-    print(
-        "\nTYPE:\n"
-    )
-
-    print(type(data))
-
-    print(
-        "\nKEYS:\n"
-    )
-
-    if isinstance(data, dict):
-
-        print(data.keys())
-
-except Exception as error:
-
-    print(
-        "\nERROR:\n"
-    )
-
-    print(error)
+if __name__ == "__main__":
+    print(fetch_nse_option_chain())

@@ -33,6 +33,14 @@ df = pd.read_csv(
     "historical_data/dataset.csv"
 )
 
+if "Close" not in df.columns:
+    raise ValueError("historical_data/dataset.csv must contain a Close column")
+
+if "RETURN" not in df.columns:
+    df["RETURN"] = df["Close"].pct_change()
+
+df["NEXT_DAY_RETURN"] = (df["Close"].shift(-1) / df["Close"]) - 1
+
 # =====================================
 # DROP UNUSED COLUMNS
 # =====================================
@@ -53,6 +61,9 @@ for column in drop_columns:
         df = df.drop(
             columns=[column]
         )
+
+df = df.dropna()
+df = df.select_dtypes(include=["float64", "int64"])
 
 # =====================================
 # FEATURES & TARGET
@@ -90,9 +101,9 @@ X_train, X_test, y_train, y_test = (
 
 model = XGBRegressor(
 
-    n_estimators=1200,
+    n_estimators=200,
 
-    max_depth=8,
+    max_depth=5,
 
     learning_rate=0.01,
 
@@ -101,6 +112,8 @@ model = XGBRegressor(
     colsample_bytree=0.9,
 
     random_state=42,
+
+    n_jobs=1,
 )
 
 # =====================================

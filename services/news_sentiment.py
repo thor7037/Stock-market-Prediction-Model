@@ -2,4 +2,10 @@
 
 
 def get_market_sentiment(symbol: str | None = None):
-    raise NotImplementedError
+    return {
+        "symbol": symbol,
+        "label": "Neutral",
+        "score": 0.0,
+        "items": [],
+        "source": "not_configured",
+    }
